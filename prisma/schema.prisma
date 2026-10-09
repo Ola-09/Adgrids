@@ -1,0 +1,294 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Tenant {
+  id            String       @id @default(cuid())
+  name          String
+  type          String       // AGENCY | MEDIA_OWNER | VENDOR | CLIENT | FIELD_UNIT
+  licenseNumber String?
+  city          String?
+  country       String?
+  address       String?
+  phone         String?
+  website       String?
+  currency      String?      @default("USD")
+  timezone      String?      @default("UTC+1")
+  logoUrl       String?
+  setupCompleted Boolean     @default(true)
+  status        String       @default("ACTIVE") // PENDING | ACTIVE | REJECTED | SUSPENDED
+  mediaOwnerId  String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  users         User[]
+  invitations   Invitation[]
+}
+
+model User {
+  id              String         @id @default(cuid())
+  email           String         @unique
+  passwordHash    String
+  name            String
+  firstName       String?
+  lastName        String?
+  role            String         // Agency Admin | Account Manager | Campaign Manager | Operations Manager | Finance Manager | Field Manager | Agency Staff | Customer / Client Company | Media Owner | Vendor | Field Agent | Platform Admin
+  title           String?
+  phone           String?
+  avatarUrl       String?
+  emailVerifiedAt DateTime?
+  mfaEnabled      Boolean        @default(false)
+  mfaSecret       String?
+  mfaBackupCodes  String?        // JSON string of backup codes
+  tenantId        String?
+  status          String         @default("ACTIVE") // PENDING_VERIFICATION | PENDING | ACTIVE | SUSPENDED | REJECTED | DISABLED
+  lastLoginAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  tenant          Tenant?        @relation(fields: [tenantId], references: [id])
+  refreshTokens   RefreshToken[]
+  emailTokens     EmailToken[]
+  auditLogs       AuditLog[]
+  invitationsSent Invitation[]   @relation("InvitationsSent")
+}
+
+model Invitation {
+  id          String    @id @default(cuid())
+  email       String
+  role        String
+  tenantId    String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  invitedById String?
+  createdAt   DateTime  @default(now())
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invitedBy   User?     @relation("InvitationsSent", fields: [invitedById], references: [id])
+}
+
+model RefreshToken {
+  id                  String    @id @default(cuid())
+  userId              String
+  tokenHash           String    @unique
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  replacedByTokenHash String?
+  userAgent           String?
+  ip                  String?
+  createdAt           DateTime  @default(now())
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EmailToken {
+  id         String    @id @default(cuid())
+  userId     String
+  type       String    // VERIFY_EMAIL | RESET_PASSWORD
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RolePermission {
+  id         String @id @default(cuid())
+  role       String
+  permission String
+  @@unique([role, permission])
+}
+
+model Metro {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  country        String
+  currency       String
+  currencySymbol String
+  sitesCount     Int      @default(0)
+  crewsCount     Int      @default(0)
+  complianceRate Float    @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actorRole String?
+  tenantId  String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  String?  // JSON string
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  actor     User?    @relation(fields: [actorId], references: [id])
+}
+
+model Campaign {
+  id                String             @id @default(cuid())
+  tenantId          String?
+  clientTenantId    String?
+  name              String
+  clientName        String
+  brand             String
+  status            String             @default("Active") // Draft | Pending | Active | Live | Verified | Paused | Completed | Expired | Cancelled
+  health            String             @default("Healthy") // Healthy | Needs Attention | At Risk | Critical
+  startDate         DateTime
+  endDate           DateTime
+  budgetUSD         Float              @default(0)
+  spendUSD          Float              @default(0)
+  deliveryRate      Float              @default(0)
+  verificationRate  Float              @default(0)
+  targetImpressions Int                @default(0)
+  objective         String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  locations         CampaignLocation[]
+  issues            CampaignIssue[]
+  jobs              VendorJob[]
+}
+
+model CampaignLocation {
+  id                   String    @id @default(cuid())
+  campaignId           String
+  billboardId          String?
+  siteName             String
+  metro                String
+  corridor             String
+  format               String
+  lat                  Float
+  lng                  Float
+  status               String    @default("Live") // Live | Verified | Pending | Issue | Offline
+  healthScore          Float     @default(98.5)
+  previewUrl           String?
+  latestPhotoUrl       String?
+  luxScore             Int       @default(1200)
+  gpsCoords            String?
+  verifiedAt           DateTime?
+  monitoringStatus     String    @default("Active")
+  impressionsDelivered Int       @default(0)
+  createdAt            DateTime  @default(now())
+  campaign             Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model CampaignIssue {
+  id          String    @id @default(cuid())
+  campaignId  String
+  siteId      String?
+  siteName    String
+  title       String
+  description String
+  severity    String    @default("medium") // low | medium | high | critical
+  status      String    @default("open") // open | in_progress | resolved
+  reportedAt  DateTime  @default(now())
+  resolvedAt  DateTime?
+  campaign    Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+}
+
+model VendorJob {
+  id             String    @id @default(cuid())
+  tenantId       String?   // agency tenant
+  vendorTenantId String?
+  campaignId     String?
+  title          String
+  serviceType    String    // Printing | Installation | Maintenance | Logistics | Photography | Videography | Creative production | Field verification
+  siteName       String
+  location       String
+  status         String    @default("Assigned") // Assigned | In Progress | Evidence Submitted | Completed | Overdue
+  deadline       DateTime
+  instructions   String?
+  payoutUSD      Float     @default(0)
+  assigneeName   String?
+  materials      String?
+  evidenceUrl    String?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  campaign       Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+}
+
+model FieldTask {
+  id                     String    @id @default(cuid())
+  tenantId               String?
+  agentId                String?
+  agentName              String?
+  agentEmail             String?
+  campaignId             String?
+  campaignName           String?
+  clientName             String?
+  siteId                 String
+  siteName               String
+  billboardId            String?
+  metro                  String
+  corridor               String
+  lat                    Float
+  lng                    Float
+  status                 String    @default("Assigned") // Assigned | In Transit | On Site | Verified | Issue
+  verificationState      String    @default("VERIFICATION_PENDING") // VERIFICATION_PENDING | VERIFIED | FAILED | REQUIRES_REVIEW | REVERIFICATION_REQUESTED | VERIFICATION_EXPIRED
+  acceptableRadiusMeters Float     @default(50.0)
+  requiredEvidence       String?   // JSON array of required evidence types
+  deadline               DateTime?
+  instructions           String?
+  luxScore               Int?
+  verificationResult     String?
+  failureReason          String?
+  locationStatus         String?   // LOCATION_VERIFIED | LOCATION_UNAVAILABLE | OUTSIDE_RADIUS
+  capturedLat            Float?
+  capturedLng            Float?
+  capturedAccuracyMeters Float?
+  capturedDistanceMeters Float?
+  deviceInfo             String?   // JSON device/session info
+  ipAddressAuditSignal   String?   // Additional audit signal, not definitive physical presence
+  evidencePhotoUrl       String?
+  evidencePhotos         String?   // JSON array of photo URLs
+  evidenceVideoUrl       String?
+  evidence360Url         String?
+  evidenceWideAngleUrl   String?
+  reviewedBy             String?
+  reviewedAt             DateTime?
+  reviewerNotes          String?
+  auditEvents            String?   // JSON array of audit events
+  gpsVerification        String?
+  scheduledDate          DateTime  @default(now())
+  completedAt            DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @default(now()) @updatedAt
+}
+
+model Invoice {
+  id                String    @id @default(cuid())
+  tenantId          String    // issuer (agency or media owner)
+  recipientTenantId String?   // recipient (client or agency)
+  invoiceNumber     String    @unique
+  clientName        String
+  amountUSD         Float
+  status            String    @default("Pending") // Draft | Pending | Paid | Overdue | Cancelled
+  issueDate         DateTime  @default(now())
+  dueDate           DateTime
+  paidAt            DateTime?
+  itemsSummary      String?
+  createdAt         DateTime  @default(now())
+}
+
+model MediaBooking {
+  id                 String   @id @default(cuid())
+  mediaOwnerTenantId String
+  agencyTenantId     String?
+  billboardId        String
+  billboardName      String
+  brand              String
+  campaignName       String
+  agencyName         String
+  startDate          DateTime
+  endDate            DateTime
+  rateMonthlyUSD     Float
+  totalAmountUSD     Float
+  status             String   @default("Pending") // Pending | Approved | Rejected | Active | Completed
+  createdAt          DateTime @default(now())
+}
+

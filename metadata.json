@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Remix Remix ADGRID",
+  "description": "Enterprise Out-of-Home (OOH) logistics, real-time IoT billboard telemetry, proof-of-play verification, multi-metro field dispatch, and cross-border settlement engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
