@@ -834,6 +834,112 @@ export async function seedDatabase() {
   }
   console.log(`✓ Seeded ${INVOICES_SEED.length} platform invoices`);
 
+  // 11a. Seed Billboard inventory (core entity — one stable identity per entity via `code`)
+  const BILLBOARDS_SEED = [
+    {
+      code: 'LOS-DOOH-101', tenantId: 'tenant-media-owner-continental', name: 'Lekki Expressway Digital Billboard',
+      metro: 'LOS', metroName: 'Lagos, Nigeria', location: 'Lekki Expressway, Lagos', corridor: 'Lekki–Epe Expressway Corridor',
+      format: 'Digital LED', status: 'Live & Verified', lifecycleStatus: 'PUBLISHED',
+      dimensions: '12.5m x 5.5m', resolution: '1920 x 848', lightingType: 'Active LED Display',
+      priceMonthlyUSD: 3200, priceDailyUSD: 180, dailyTrafficVehicles: 185000, dwellTimeSeconds: 14,
+      lat: 6.4457, lng: 3.5526, previewUrl: 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=1200&q=80',
+      mediaOwnerCompany: 'Continental Outdoor & Alliance Media Concession', importSource: 'manual', profileCompleteness: 92,
+    },
+    {
+      code: 'LOS-VI-088', tenantId: 'tenant-media-owner-continental', name: 'Victoria Island Coastal LED Mega-Screen',
+      metro: 'LOS', metroName: 'Lagos, Nigeria', location: 'Ahmadu Bello Way, Victoria Island', corridor: 'VI Coastal Corridor',
+      format: 'Iconic 3D LED', status: 'Live & Verified', lifecycleStatus: 'PUBLISHED',
+      dimensions: '18m x 9m', resolution: '3840 x 1920', lightingType: 'Active LED Display',
+      priceMonthlyUSD: 4800, priceDailyUSD: 260, dailyTrafficVehicles: 240000, dwellTimeSeconds: 22,
+      lat: 6.4281, lng: 3.4219, previewUrl: 'https://images.unsplash.com/photo-1573164713988-8665fc963095?auto=format&fit=crop&w=1200&q=80',
+      mediaOwnerCompany: 'Continental Outdoor & Alliance Media Concession', importSource: 'manual', profileCompleteness: 96,
+    },
+    {
+      code: 'LOS-LK-042', tenantId: 'tenant-media-owner-continental', name: 'Lekki Toll Gate Curved DOOH Spectacular',
+      metro: 'LOS', metroName: 'Lagos, Nigeria', location: 'Lekki Toll Gate, Lagos', corridor: 'Lekki–Epe Expressway Corridor',
+      format: 'Gantry Monolith', status: 'Active DOOH', lifecycleStatus: 'PUBLISHED',
+      dimensions: '20m x 6m', resolution: '3072 x 920', lightingType: 'Active LED Display',
+      priceMonthlyUSD: 5200, priceDailyUSD: 290, dailyTrafficVehicles: 310000, dwellTimeSeconds: 18,
+      lat: 6.4419, lng: 3.5398, previewUrl: 'https://images.unsplash.com/photo-1542744094-3a31f272c490?auto=format&fit=crop&w=1200&q=80',
+      mediaOwnerCompany: 'Continental Outdoor & Alliance Media Concession', importSource: 'manual', profileCompleteness: 88,
+    },
+    {
+      code: 'NBO-UH-044', tenantId: 'tenant-media-owner-continental', name: 'Nairobi Uhuru Highway Digital Gantry',
+      metro: 'NBO', metroName: 'Nairobi, Kenya', location: 'Uhuru Highway, Nairobi', corridor: 'Uhuru Highway Corridor',
+      format: 'Digital LED', status: 'Live & Verified', lifecycleStatus: 'PUBLISHED',
+      dimensions: '14m x 6m', resolution: '2560 x 1096', lightingType: 'Active LED Display',
+      priceMonthlyUSD: 3900, priceDailyUSD: 210, dailyTrafficVehicles: 160000, dwellTimeSeconds: 15,
+      lat: -1.2921, lng: 36.8219, previewUrl: 'https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&w=1200&q=80',
+      mediaOwnerCompany: 'Continental Outdoor & Alliance Media Concession', importSource: 'manual', profileCompleteness: 90,
+    },
+    {
+      code: 'LOS-OZ-11', tenantId: 'tenant-media-owner-continental', name: 'Ozumba Mbadiwe Dual-Screen Tower',
+      metro: 'LOS', metroName: 'Lagos, Nigeria', location: 'Ozumba Mbadiwe Avenue, Victoria Island', corridor: 'VI Coastal Corridor',
+      format: 'Overhead Dual DOOH', status: 'Live Loop', lifecycleStatus: 'PUBLISHED',
+      dimensions: '2 x 10m x 4m', resolution: '1600 x 640', lightingType: 'Active LED Display',
+      priceMonthlyUSD: 2750, priceDailyUSD: 150, dailyTrafficVehicles: 148000, dwellTimeSeconds: 12,
+      lat: 6.4354, lng: 3.4316, previewUrl: 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?auto=format&fit=crop&w=1200&q=80',
+      mediaOwnerCompany: 'Continental Outdoor & Alliance Media Concession', importSource: 'manual', profileCompleteness: 85,
+    },
+    {
+      code: 'LOS-IK-042', tenantId: 'tenant-media-owner-continental', name: 'Ikeja Allen Avenue Static Unipole',
+      metro: 'LOS', metroName: 'Lagos, Nigeria', location: 'Allen Avenue, Ikeja', corridor: 'Ikeja Commercial Loop',
+      format: 'Static Unipole', status: 'Audited', lifecycleStatus: 'PUBLISHED',
+      dimensions: '12m x 4m', lightingType: 'Solar High-Lumen Backlit',
+      priceMonthlyUSD: 1450, priceDailyUSD: 85, dailyTrafficVehicles: 96000, dwellTimeSeconds: 9,
+      lat: 6.6018, lng: 3.3515, previewUrl: 'https://images.unsplash.com/photo-1513635269975-59663e0ac1ad?auto=format&fit=crop&w=1200&q=80',
+      mediaOwnerCompany: 'Continental Outdoor & Alliance Media Concession', importSource: 'manual', profileCompleteness: 78,
+    },
+    {
+      code: 'LOS-AP-008', tenantId: 'tenant-media-owner-continental', name: 'Apapa Wharf Road Wallscape',
+      metro: 'LOS', metroName: 'Lagos, Nigeria', location: 'Wharf Road, Apapa', corridor: 'Apapa Port Access',
+      format: 'Static Wallscape', status: 'Pending PoP', lifecycleStatus: 'PUBLISHED',
+      dimensions: '16m x 5m', lightingType: 'Prismatic LED Array',
+      priceMonthlyUSD: 1150, priceDailyUSD: 65, dailyTrafficVehicles: 74000, dwellTimeSeconds: 11,
+      lat: 6.4489, lng: 3.3591, previewUrl: 'https://images.unsplash.com/photo-1519501025264-65ba15a82390?auto=format&fit=crop&w=1200&q=80',
+      mediaOwnerCompany: 'Continental Outdoor & Alliance Media Concession', importSource: 'manual', profileCompleteness: 70,
+    },
+  ];
+
+  for (const bb of BILLBOARDS_SEED) {
+    await prisma.billboard.upsert({
+      where: { code: bb.code },
+      update: bb,
+      create: bb,
+    });
+  }
+  console.log(`✓ Seeded ${BILLBOARDS_SEED.length} billboard inventory records`);
+
+  // 11b. Seed agency clients (doc §5 — Client entity managed by a marketing agency)
+  const CLIENTS_SEED = [
+    { tenantId: 'tenant-agency-afrireach', name: 'Safaricom PLC', brand: 'Safaricom 5G & M-Pesa', contactName: 'Fiona Mutasa', contactEmail: 'fmutasa@safaricom.co.ke', status: 'ACTIVE' },
+    { tenantId: 'tenant-agency-afrireach', name: 'Flutterwave Inc.', brand: 'Flutterwave Enterprise Send', contactName: 'Media Team', contactEmail: 'media@flutterwave.com', status: 'ACTIVE' },
+    { tenantId: 'tenant-agency-afrireach', name: 'Coca-Cola Nigeria', brand: 'Real Magic Seasonal', contactName: 'Brand Desk', contactEmail: 'brands@coca-cola.ng', status: 'ACTIVE' },
+  ];
+  for (const cli of CLIENTS_SEED) {
+    await prisma.client.upsert({
+      where: { tenantId_name: { tenantId: cli.tenantId, name: cli.name } },
+      update: cli,
+      create: cli,
+    });
+  }
+  console.log(`✓ Seeded ${CLIENTS_SEED.length} agency clients`);
+
+  // 11c. Seed subscriptions (doc §7 — persisted, backend-authoritative)
+  const SUBSCRIPTIONS_SEED = [
+    { tenantId: 'tenant-agency-afrireach', planId: 'plan_professional', planTier: 'professional', status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+    { tenantId: 'tenant-media-owner-continental', planId: 'plan_professional', planTier: 'professional', status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+    { tenantId: 'tenant-client-safaricom', planId: 'plan_starter', planTier: 'starter', status: 'active', currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+  ];
+  for (const sub of SUBSCRIPTIONS_SEED) {
+    await prisma.subscription.upsert({
+      where: { tenantId: sub.tenantId },
+      update: sub,
+      create: sub,
+    });
+  }
+  console.log(`✓ Seeded ${SUBSCRIPTIONS_SEED.length} tenant subscriptions`);
+
   // 11. Seed Media Bookings
   const BOOKINGS_SEED = [
     {

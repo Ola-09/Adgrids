@@ -27,6 +27,7 @@ model Tenant {
   updatedAt     DateTime     @updatedAt
   users         User[]
   invitations   Invitation[]
+  billboards    Billboard[]
 }
 
 model User {
@@ -276,7 +277,7 @@ model Invoice {
 }
 
 model MediaBooking {
-  id                 String   @id @default(cuid())
+  id                 String             @id @default(cuid())
   mediaOwnerTenantId String
   agencyTenantId     String?
   billboardId        String
@@ -288,7 +289,160 @@ model MediaBooking {
   endDate            DateTime
   rateMonthlyUSD     Float
   totalAmountUSD     Float
-  status             String   @default("Pending") // Pending | Approved | Rejected | Active | Completed
-  createdAt          DateTime @default(now())
+  status             String             @default("Pending") // Pending | Approved | Rejected | Active | Completed | Cancelled
+  paymentRequirement String             @default("NONE") // NONE | DEPOSIT | FULL — enforced before approval when payments exist
+  createdById        String?
+  approvedAt         DateTime?
+  approvedById       String?
+  cancelledAt        DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  billboard          Billboard?         @relation(fields: [billboardId], references: [code])
+  payments           Payment[]
+  availabilityBlocks AvailabilityBlock[]
+}
+
+// ── Core inventory entity (architecture doc §5) ─────────────────────────────
+// One stable identity per entity: `code` is the durable business identifier
+// (e.g. LOS-DOOH-101) preserved across imports and updates.
+model Billboard {
+  id                    String    @id @default(cuid())
+  code                  String    @unique
+  tenantId              String? // owning organization (media owner or billboard agency)
+  name                  String
+  metro                 String?
+  metroName             String?
+  location              String?
+  corridor              String?
+  format                String?
+  status                String    @default("Active DOOH") // display status shown on marketplace
+  lifecycleStatus       String    @default("DRAFT") // DRAFT | PENDING_REVIEW | PUBLISHED | UNPUBLISHED | MAINTENANCE — publishing is separate from importing
+  client                String?
+  brand                 String?
+  flightId              String?
+  flightName            String?
+  dimensions            String?
+  resolution            String?
+  lightingType          String?
+  priceMonthlyUSD       Float     @default(0)
+  priceDailyUSD         Float     @default(0)
+  dailyTrafficVehicles  Int       @default(0)
+  dailyReach            String?
+  dwellTimeSeconds      Int       @default(0)
+  availabilityStatus    String    @default("Available Now")
+  audienceType          String?
+  campaignObjective     String?
+  description           String?
+  previewUrl            String?
+  nightUrl              String?
+  lat                   Float?
+  lng                   Float?
+  mediaOwnerCompany     String?
+  contactPerson         String?
+  contactPhone          String?
+  contactEmail          String?
+  licenseNumber         String?
+  specsList             String? // JSON array
+  profileCompleteness   Int       @default(0)
+  lastImportedAt        DateTime?
+  importSource          String? // manual | spreadsheet | api
+  isProtectedBooking    Boolean   @default(false)
+  protectedReason       String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  tenant             Tenant?             @relation(fields: [tenantId], references: [id])
+  media              BillboardMedia[]
+  availabilityBlocks AvailabilityBlock[]
+  bookings           MediaBooking[]
+}
+
+// Media assets stored out-of-band; only durable references live in the DB (doc §8).
+model BillboardMedia {
+  id           String    @id @default(cuid())
+  billboardId  String
+  assetKey     String // storage key or durable asset reference
+  kind         String    @default("photo") // photo | night | video | wide_angle | 360
+  mimeType     String?
+  fileSize     Int?
+  uploadStatus String    @default("READY") // UPLOADING | READY | FAILED
+  visibility   String    @default("ORG_PRIVATE") // PUBLIC | ORG_PRIVATE
+  uploadedById String?
+  createdAt    DateTime  @default(now())
+  billboard    Billboard @relation(fields: [billboardId], references: [id], onDelete: Cascade)
+
+  @@index([billboardId])
+}
+
+// Reserved / unavailable / maintenance date ranges (doc §5 AvailabilityBlock).
+model AvailabilityBlock {
+  id           String       @id @default(cuid())
+  billboardId  String // Billboard.code
+  startAt      DateTime
+  endAt        DateTime
+  reason       String       @default("BOOKED") // BOOKED | HOLD | MAINTENANCE | UNAVAILABLE
+  sourceType   String? // booking | manual | import
+  sourceId     String? // MediaBooking.id or audit reference
+  holdExpiresAt DateTime? // temporary holds expire if payment/confirmation never arrives
+  createdById  String?
+  createdAt    DateTime     @default(now())
+  billboard    Billboard    @relation(fields: [billboardId], references: [code], onDelete: Cascade)
+  booking      MediaBooking? @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([billboardId, startAt, endAt])
+}
+
+// Brand/customer managed by a marketing agency (doc §5).
+model Client {
+  id           String   @id @default(cuid())
+  tenantId     String // owning agency tenant
+  name         String
+  brand        String?
+  contactName  String?
+  contactEmail String?
+  contactPhone String?
+  status       String   @default("ACTIVE") // ACTIVE | PAUSED | ARCHIVED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+// Individual payment or refund transaction (doc §5 Payment).
+model Payment {
+  id             String        @id @default(cuid())
+  bookingId      String?
+  tenantId       String?
+  direction      String        @default("INBOUND") // INBOUND | REFUND
+  kind           String        @default("PAYMENT") // PAYMENT | REFUND
+  amountUSD      Float
+  currency       String        @default("USD")
+  method         String? // paystack | flutterwave | stripe | simulated | manual
+  providerRef    String?       @unique // provider transaction reference — idempotency anchor
+  idempotencyKey String?       @unique // client-supplied idempotency key — retries never duplicate
+  status         String        @default("PENDING") // PENDING | SUCCESS | FAILED | REVERSED
+  meta           String? // JSON payload (never store credentials)
+  paidAt         DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  booking        MediaBooking? @relation(fields: [bookingId], references: [id])
+
+  @@index([bookingId])
+}
+
+// Plan and billing state for an organization (doc §5 + §7).
+model Subscription {
+  id             String    @id @default(cuid())
+  tenantId       String    @unique
+  planId         String    @default("plan_starter")
+  planTier       String    @default("starter")
+  status         String    @default("active") // active | past_due | cancelled
+  billingInterval String   @default("monthly") // monthly | annual
+  customEntitlementOverrides String? // JSON
+  whiteLabelConfig String? // JSON
+  currentPeriodEnd DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
