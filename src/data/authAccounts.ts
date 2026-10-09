@@ -140,6 +140,7 @@ export const ROLE_NAVIGATION_MAP: Record<UserRole, { label: string; icon: string
     { label: 'Overview', icon: 'LayoutDashboard', tabId: 'command-center' },
     { label: 'Campaigns', icon: 'Megaphone', tabId: 'campaigns' },
     { label: 'Inventory', icon: 'Layers', tabId: 'inventory' },
+    { label: 'Bookings', icon: 'CalendarCheck', tabId: 'bookings' },
     { label: 'Clients', icon: 'Building', tabId: 'clients' },
     { label: 'Marketplace', icon: 'Store', tabId: 'marketplace' },
     { label: 'Operations', icon: 'Wrench', tabId: 'operations' },
@@ -152,6 +153,7 @@ export const ROLE_NAVIGATION_MAP: Record<UserRole, { label: string; icon: string
   'Account Manager': [
     { label: 'Overview', icon: 'LayoutDashboard', tabId: 'command-center' },
     { label: 'Inventory', icon: 'Layers', tabId: 'inventory' },
+    { label: 'Bookings', icon: 'CalendarCheck', tabId: 'bookings' },
     { label: 'Clients', icon: 'Building', tabId: 'clients' },
     { label: 'Campaigns', icon: 'Megaphone', tabId: 'campaigns' },
     { label: 'Marketplace', icon: 'Store', tabId: 'marketplace' },

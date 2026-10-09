@@ -85,7 +85,16 @@ const MainApp: React.FC = () => {
         if (currentUser?.role === 'Customer / Client Company') {
           setActiveTab('live-tracker');
           navigateTo('/admin/client');
+        } else if (
+          currentUser?.role === 'Media Owner' ||
+          currentUser?.role === 'Vendor' ||
+          currentUser?.role === 'Field Agent'
+        ) {
+          navigateTo(currentUser?.authorizedDashboard || '/admin/agency');
         } else {
+          // Agency buying roles: land on Media Bookings — the request modal
+          // opens pre-filled from the active purchase intent.
+          setActiveTab('bookings');
           navigateTo(currentUser?.authorizedDashboard || '/admin/agency');
         }
         return;

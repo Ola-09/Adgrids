@@ -127,8 +127,13 @@ export const MediaOwnerBookings: React.FC = () => {
                     <td className="py-3.5 px-3">
                       <StatusBadge status={bkg.status} />
                     </td>
-                    <td className="py-3.5 px-3 font-black text-[#181716]">
-                      ${bkg.totalAmountUSD.toLocaleString()}
+                    <td className="py-3.5 px-3">
+                      <div className="font-black text-[#181716]">${bkg.totalAmountUSD.toLocaleString()}</div>
+                      <div className="text-[10px] font-semibold">
+                        <span className="text-emerald-600">Collected ${(bkg.paidUSD || 0).toLocaleString()}</span>
+                        {' · '}
+                        <span className="text-zinc-500">Bal ${(bkg.balanceUSD || 0).toLocaleString()}</span>
+                      </div>
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       {bkg.status === 'Pending' ? (

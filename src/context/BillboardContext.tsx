@@ -724,6 +724,104 @@ function normalizeStoredBillboards(items: MarketplaceBillboard[]) {
     : billboard);
 }
 
+// ── Server sync helpers (backend is authoritative; localStorage is cache/fallback) ─
+
+function getStoredToken(): string {
+  return localStorage.getItem('adgrid_token') || localStorage.getItem('adgrid_access_token') || '';
+}
+
+async function serverFetch(path: string, options: RequestInit = {}): Promise<Response> {
+  const token = getStoredToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', ...((options.headers as Record<string, string>) || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return fetch(path, { ...options, headers });
+}
+
+const BILLBOARD_FIELDS_DEFAULTS = {
+  status: 'Live & Verified',
+  client: 'Direct Concession Listing',
+  brand: 'Open for Booking',
+  availabilityStatus: 'Available Now',
+  audienceType: 'High-Income Commuters',
+  campaignObjective: 'Brand Awareness',
+  lightingType: 'Active LED Display',
+  resolution: '1920 x 1080 Full HD',
+  screenHealth: '100% Calibrated & Active',
+};
+
+function mapServerBillboard(row: Record<string, any>): MarketplaceBillboard {
+  const metro = (row.metro || 'LOS') as MetroCode;
+  const metroMeta = METRO_DEFAULTS[metro] || METRO_DEFAULTS.LOS;
+  const companyName = row.mediaOwnerCompany || 'Continental Outdoor Nigeria Ltd';
+  const traffic = row.dailyTrafficVehicles || 0;
+  const monthly = row.priceMonthlyUSD || 0;
+
+  return {
+    id: row.code,
+    name: row.name,
+    metro,
+    metroName: row.metroName || metroMeta.name,
+    location: row.location || '',
+    corridor: row.corridor || '',
+    format: row.format || 'Digital LED',
+    status: row.status || BILLBOARD_FIELDS_DEFAULTS.status,
+    client: row.client || BILLBOARD_FIELDS_DEFAULTS.client,
+    brand: row.brand || BILLBOARD_FIELDS_DEFAULTS.brand,
+    flightId: row.flightId || `#${metro}-OPEN`,
+    flightName: row.flightName || 'Open Commercial Flight',
+    priceMonthlyUSD: monthly,
+    priceDailyUSD: row.priceDailyUSD || Math.round(monthly / 30),
+    dimensions: row.dimensions || '20m x 8m (160 sq.m)',
+    availabilityStatus: row.availabilityStatus || BILLBOARD_FIELDS_DEFAULTS.availabilityStatus,
+    audienceType: row.audienceType || BILLBOARD_FIELDS_DEFAULTS.audienceType,
+    campaignObjective: row.campaignObjective || BILLBOARD_FIELDS_DEFAULTS.campaignObjective,
+    dailyTrafficVehicles: traffic,
+    dwellTimeSeconds: row.dwellTimeSeconds || 0,
+    mediaOwnerCompany: companyName,
+    companyContact: {
+      companyName,
+      tradingName: companyName,
+      licenseNumber: row.licenseNumber || 'LASAA/OOH/VOL.4/2024-REG',
+      headquartersAddress: `${row.location || ''}, ${metroMeta.name}`.trim(),
+      contactPerson: row.contactPerson || 'Concession Operations Lead',
+      contactRole: 'Head of Inventory & Commercial Leasing',
+      phoneDirect: row.contactPhone || '+234 1 295 8820',
+      phoneOperations: '+234 803 555 0192',
+      emailDirect: row.contactEmail || 'inventory@concession-network.ng',
+      emailBookings: row.contactEmail || 'bookings@concession-network.ng',
+      website: 'https://www.adgrid.cloud',
+      operatingHours: 'Mon–Fri: 08:00 – 18:00 WAT (24/7 NOC Monitoring)',
+      emergencySLA: '2-Hour Technical Intervention SLA',
+      verifiedStatus: 'Verified Concessionaire',
+      activeSitesCount: 1,
+    },
+    description: row.description || '',
+    lightingType: row.lightingType || BILLBOARD_FIELDS_DEFAULTS.lightingType,
+    specsList: row.specsList ? (Array.isArray(row.specsList) ? row.specsList : safeParseJson(row.specsList, [])) : [],
+    lat: row.lat ?? 0,
+    lng: row.lng ?? 0,
+    previewUrl: row.previewUrl || FALLBACK_BILLBOARD_IMAGE,
+    nightUrl: row.nightUrl || undefined,
+    dailyReach: row.dailyReach || (traffic > 0 ? `${(traffic * 1.6).toLocaleString()} Impressions` : undefined),
+    resolution: row.resolution || BILLBOARD_FIELDS_DEFAULTS.resolution,
+    screenHealth: BILLBOARD_FIELDS_DEFAULTS.screenHealth,
+    profileCompleteness: row.profileCompleteness ?? undefined,
+    lastImportedAt: row.lastImportedAt || undefined,
+    importSource: row.importSource === 'spreadsheet' ? 'Spreadsheet Batch Import' : row.importSource || undefined,
+    isProtectedBooking: row.isProtectedBooking || false,
+    protectedReason: row.protectedReason || undefined,
+  } as MarketplaceBillboard;
+}
+
+function safeParseJson<T>(value: string, fallback: T): T {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export const BillboardProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [billboards, setBillboards] = useState<MarketplaceBillboard[]>(() => {
     try {
@@ -740,7 +838,7 @@ export const BillboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return DEFAULT_BILLBOARDS;
   });
 
-  // Persist to localStorage whenever billboards state changes
+  // Persist to localStorage as an offline cache (server remains authoritative).
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(billboards));
@@ -748,6 +846,26 @@ export const BillboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // ignore
     }
   }, [billboards]);
+
+  // Sync from the backend: published marketplace inventory replaces the cache when reachable.
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const response = await fetch('/api/marketplace/billboards');
+        if (!response.ok) return;
+        const data = await response.json();
+        if (isMounted && data?.success && Array.isArray(data.billboards) && data.billboards.length > 0) {
+          setBillboards(data.billboards.map(mapServerBillboard));
+        }
+      } catch {
+        // Server unreachable — keep the cached view.
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Add billboard
   const addBillboard = useCallback((input: AddBillboardInput): MarketplaceBillboard => {
@@ -832,19 +950,66 @@ export const BillboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     setBillboards((prev) => [newBillboard, ...prev]);
+
+    // Persist to the backend (fire-and-forget; local state updates optimistically).
+    void (async () => {
+      try {
+        const response = await serverFetch('/api/inventory', {
+          method: 'POST',
+          body: JSON.stringify({ ...newBillboard, code: newId }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          console.warn('[inventory] server create failed:', data?.error || response.status);
+        }
+      } catch {
+        // Server unreachable — local cache still holds the record.
+      }
+    })();
+
     return newBillboard;
   }, []);
 
-  // Update billboard
+  // Update billboard — optimistic locally, authoritative on the server
   const updateBillboard = useCallback((id: string, updates: Partial<MarketplaceBillboard>) => {
     setBillboards((prev) =>
       prev.map((b) => (b.id === id ? { ...b, ...updates } : b))
     );
+
+    void (async () => {
+      try {
+        const response = await serverFetch(`/api/inventory/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify(updates),
+        });
+        if (!response.ok && response.status !== 401) {
+          console.warn('[inventory] server update failed:', response.status);
+        }
+      } catch {
+        // Server unreachable — local cache still holds the change.
+      }
+    })();
   }, []);
 
-  // Delete billboard
+  // Delete billboard — refused server-side when booking history must be preserved
   const deleteBillboard = useCallback((id: string) => {
     setBillboards((prev) => prev.filter((b) => b.id !== id));
+
+    void (async () => {
+      try {
+        const response = await serverFetch(`/api/inventory/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (response.status === 409) {
+          // Server refused (bookings exist) — restore authoritative state.
+          const refetch = await fetch('/api/marketplace/billboards');
+          if (refetch.ok) {
+            const data = await refetch.json();
+            if (data?.success) setBillboards(data.billboards.map(mapServerBillboard));
+          }
+        }
+      } catch {
+        // Server unreachable — local removal stands until next sync.
+      }
+    })();
   }, []);
 
   // Filter helper for company billboards
@@ -968,6 +1133,42 @@ export const BillboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     URL.revokeObjectURL(url);
   }, [billboards]);
 
+  // Fire the server-side import (real persistence with server validation & dedup),
+  // then reconcile local state with the authoritative database records.
+  const syncImportToServer = useCallback(
+    (batch: { toAdd: MarketplaceBillboard[]; toUpdate: { id: string; data: Partial<MarketplaceBillboard> }[] }) => {
+      void (async () => {
+        try {
+          const rows: Record<string, unknown>[] = [
+            ...batch.toAdd.map((b) => ({ ...b, code: b.id })),
+            ...batch.toUpdate.map((u) => ({ ...u.data, code: u.id })),
+          ];
+          if (rows.length === 0) return;
+
+          const response = await serverFetch('/api/inventory/import', {
+            method: 'POST',
+            body: JSON.stringify({ rows, fileName: 'wizard_batch' }),
+          });
+          if (!response.ok) {
+            console.warn('[inventory] server import failed:', response.status);
+            return;
+          }
+          // Reconcile with the database (codes may differ for server-generated records).
+          const refetch = await fetch('/api/marketplace/billboards');
+          if (refetch.ok) {
+            const data = await refetch.json();
+            if (data?.success && Array.isArray(data.billboards) && data.billboards.length > 0) {
+              setBillboards(data.billboards.map(mapServerBillboard));
+            }
+          }
+        } catch {
+          // Server unreachable — local cache still holds the imported rows.
+        }
+      })();
+    },
+    []
+  );
+
   // Batch Import Billboards (Supports new additions and safe updates with ID stability)
   const importBillboardsBatch = useCallback(
     (batch: {
@@ -1037,9 +1238,14 @@ export const BillboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return [...newToAdd, ...updatedList];
       });
 
-      return { importedCount, updatedCount };
+      const localCounts = { importedCount, updatedCount };
+
+      // Server-side persistence with validation & dedup, then reconcile with DB truth.
+      syncImportToServer(batch);
+
+      return localCounts;
     },
-    []
+    [syncImportToServer]
   );
 
   return (

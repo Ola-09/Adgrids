@@ -11,6 +11,7 @@ import { AgencyRenewals } from './AgencyRenewals';
 import { AgencySettings } from './AgencySettings';
 import { AgencyWorkspaceSetupModal } from './AgencyWorkspaceSetupModal';
 import { AgencyInventory } from './inventory/AgencyInventory';
+import { AgencyBookings } from './AgencyBookings';
 import { SubscriptionAdminPanel } from '../../admin/SubscriptionAdminPanel';
 import { MarketplaceHome } from '../../public/MarketplaceHome';
 import { MarketplaceBillboard, VerificationItem } from '../../../types';
@@ -114,6 +115,9 @@ export const AgencyWorkspace: React.FC<AgencyWorkspaceProps> = ({
       case 'fleet-inventory':
       case 'import-inventory':
         return <AgencyInventory />;
+
+      case 'bookings':
+        return <AgencyBookings />;
 
       case 'clients':
         return (
