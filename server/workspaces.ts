@@ -8,6 +8,7 @@ import {
   sendAgencyApprovalEmail,
   sendInvitationEmail,
 } from './auth';
+import { bookingActionHandler } from './bookings';
 
 export const workspaceRouter = Router();
 
@@ -640,7 +641,21 @@ workspaceRouter.get(
         where: whereClause,
       });
 
+      // Collected vs outstanding per booking (successful inbound payments only).
+      const bookingIds = bookings.map((b) => b.id);
+      const payments = bookingIds.length
+        ? await prisma.payment.findMany({
+            where: { bookingId: { in: bookingIds }, status: 'SUCCESS', kind: 'PAYMENT' },
+            select: { bookingId: true, amountUSD: true },
+          })
+        : [];
+      const paidByBooking = new Map<string, number>();
+      for (const p of payments) {
+        paidByBooking.set(p.bookingId!, (paidByBooking.get(p.bookingId!) || 0) + p.amountUSD);
+      }
+
       const totalBookingsValue = bookings.reduce((acc, b) => acc + b.totalAmountUSD, 0);
+      const totalCollectedUSD = bookings.reduce((acc, b) => acc + (paidByBooking.get(b.id) || 0), 0);
       const activeBookings = bookings.filter(b => b.status === 'Active');
       const pendingBookings = bookings.filter(b => b.status === 'Pending');
 
@@ -651,9 +666,13 @@ workspaceRouter.get(
           activeBookingsCount: activeBookings.length,
           pendingBookingsCount: pendingBookings.length,
           totalRevenueUSD: totalBookingsValue,
+          totalCollectedUSD: Math.round(totalCollectedUSD * 100) / 100,
           occupancyRate: 94.2,
         },
-        bookings,
+        bookings: bookings.map((b) => {
+          const paid = Math.round((paidByBooking.get(b.id) || 0) * 100) / 100;
+          return { ...b, paidUSD: paid, balanceUSD: Math.round((b.totalAmountUSD - paid) * 100) / 100 };
+        }),
       });
     } catch (error: any) {
       return res.status(500).json({ success: false, error: error.message });
@@ -661,35 +680,13 @@ workspaceRouter.get(
   }
 );
 
+// Legacy path kept for existing UI — delegates to the transactional booking engine
+// (tenant ownership check, conflict re-check, HOLD→BOOKED lock, payment enforcement).
 workspaceRouter.post(
   '/media-owner/bookings/:id/action',
   requireAuth,
   requireRole(MEDIA_OWNER_ROLES),
-  async (req: Request, res: Response) => {
-    try {
-      const { action } = req.body; // 'approve' | 'reject'
-      const status = action === 'approve' ? 'Approved' : 'Rejected';
-
-      const booking = await prisma.mediaBooking.update({
-        where: { id: req.params.id },
-        data: { status },
-      });
-
-      await recordAuditLog({
-        actorId: req.user!.id,
-        actorRole: req.user!.role,
-        tenantId: req.user!.tenantId,
-        action: `BOOKING_${status.toUpperCase()}`,
-        entity: 'MediaBooking',
-        entityId: booking.id,
-        req,
-      });
-
-      return res.json({ success: true, booking, message: `Booking marked as ${status}` });
-    } catch (error: any) {
-      return res.status(500).json({ success: false, error: error.message });
-    }
-  }
+  bookingActionHandler,
 );
 
 // Media Owner: Get Connected Agencies and Pending Applications (Section 1 & 4)

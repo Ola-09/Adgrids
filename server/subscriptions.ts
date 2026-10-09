@@ -145,45 +145,82 @@ let cachedPlans = [
   },
 ];
 
-// In-memory tenant subscription states
-const tenantSubscriptions: Record<
-  string,
-  {
-    planId: string;
-    planTier: string;
-    status: string;
-    currentPeriodEnd: string;
-    customEntitlementOverrides?: Record<string, boolean>;
-    whiteLabelConfig?: {
-      agencyLogoUrl?: string;
-      clientLogoUrl?: string;
-      primaryBrandColor?: string;
-      accentBrandColor?: string;
-      customReportFooter?: string;
-      hideAdgridWatermark: boolean;
-    };
-  }
-> = {};
+// Tenant subscription state — now persisted in the Subscription table (backend-authoritative).
+type WhiteLabelConfig = {
+  agencyLogoUrl?: string;
+  clientLogoUrl?: string;
+  primaryBrandColor?: string;
+  accentBrandColor?: string;
+  customReportFooter?: string;
+  hideAdgridWatermark: boolean;
+};
 
-// Helper to get or create tenant subscription
-function getTenantSubscription(tenantId: string) {
-  if (!tenantSubscriptions[tenantId]) {
-    // Default to professional tier so rich features are visible by default in demo/eval
-    tenantSubscriptions[tenantId] = {
+type TenantSubscriptionState = {
+  planId: string;
+  planTier: string;
+  status: string;
+  currentPeriodEnd: string;
+  customEntitlementOverrides?: Record<string, boolean>;
+  whiteLabelConfig?: WhiteLabelConfig;
+};
+
+const DEFAULT_WHITELABEL: WhiteLabelConfig = {
+  agencyLogoUrl: 'https://images.unsplash.com/photo-1572021335469-31706a17aaef?auto=format&fit=crop&w=300&q=80',
+  primaryBrandColor: '#ef5a24',
+  accentBrandColor: '#181716',
+  customReportFooter: 'Confidential & Proprietary Client Flight Recapitulation',
+  hideAdgridWatermark: false,
+};
+
+function safeParse(json: string | null | undefined): Record<string, unknown> {
+  if (!json) return {};
+  try {
+    const parsed = JSON.parse(json);
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+// Get (or lazily provision) the tenant subscription from the database.
+async function getTenantSubscription(tenantId: string): Promise<TenantSubscriptionState> {
+  const row = await prisma.subscription.upsert({
+    where: { tenantId },
+    update: {},
+    // Default to professional tier so rich features are visible by default in demo/eval.
+    create: {
+      tenantId,
       planId: 'plan_professional',
       planTier: 'professional',
       status: 'active',
-      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      whiteLabelConfig: {
-        agencyLogoUrl: 'https://images.unsplash.com/photo-1572021335469-31706a17aaef?auto=format&fit=crop&w=300&q=80',
-        primaryBrandColor: '#ef5a24',
-        accentBrandColor: '#181716',
-        customReportFooter: 'Confidential & Proprietary Client Flight Recapitulation',
-        hideAdgridWatermark: false,
-      },
-    };
-  }
-  return tenantSubscriptions[tenantId];
+      currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      whiteLabelConfig: JSON.stringify(DEFAULT_WHITELABEL),
+    },
+  });
+
+  return {
+    planId: row.planId,
+    planTier: row.planTier,
+    status: row.status,
+    currentPeriodEnd: (row.currentPeriodEnd || new Date()).toISOString(),
+    customEntitlementOverrides: safeParse(row.customEntitlementOverrides) as Record<string, boolean>,
+    whiteLabelConfig: { ...DEFAULT_WHITELABEL, ...safeParse(row.whiteLabelConfig) } as WhiteLabelConfig,
+  };
+}
+
+// Persist a patch of the tenant subscription state.
+async function saveTenantSubscription(tenantId: string, state: TenantSubscriptionState): Promise<void> {
+  await prisma.subscription.update({
+    where: { tenantId },
+    data: {
+      planId: state.planId,
+      planTier: state.planTier,
+      status: state.status,
+      currentPeriodEnd: new Date(state.currentPeriodEnd),
+      customEntitlementOverrides: JSON.stringify(state.customEntitlementOverrides || {}),
+      whiteLabelConfig: JSON.stringify(state.whiteLabelConfig || DEFAULT_WHITELABEL),
+    },
+  });
 }
 
 // 1. Get all subscription plans
@@ -245,10 +282,10 @@ subscriptionsRouter.put(
 );
 
 // 3. Get current tenant's subscription state & effective entitlements
-subscriptionsRouter.get('/current', requireAuth, (req: Request, res: Response) => {
+subscriptionsRouter.get('/current', requireAuth, async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId || 'default-tenant';
-    const sub = getTenantSubscription(tenantId);
+    const sub = await getTenantSubscription(tenantId);
     const plan = cachedPlans.find((p) => p.id === sub.planId) || cachedPlans[1];
 
     // Calculate effective entitlements: plan entitlements + custom tenant overrides
@@ -286,15 +323,19 @@ subscriptionsRouter.post('/upgrade', requireAuth, async (req: Request, res: Resp
       return res.status(400).json({ success: false, error: 'Invalid subscription plan selected.' });
     }
 
-    const currentSub = getTenantSubscription(tenantId);
+    const currentSub = await getTenantSubscription(tenantId);
     const previousPlanId = currentSub.planId;
 
-    currentSub.planId = targetPlan.id;
-    currentSub.planTier = targetPlan.tier;
-    currentSub.status = 'active';
-    currentSub.currentPeriodEnd = new Date(
-      Date.now() + (billingInterval === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000
-    ).toISOString();
+    const updatedSub: TenantSubscriptionState = {
+      ...currentSub,
+      planId: targetPlan.id,
+      planTier: targetPlan.tier,
+      status: 'active',
+      currentPeriodEnd: new Date(
+        Date.now() + (billingInterval === 'annual' ? 365 : 30) * 24 * 60 * 60 * 1000
+      ).toISOString(),
+    };
+    await saveTenantSubscription(tenantId, updatedSub);
 
     await recordAuditLog({
       actorId: req.user!.id,
@@ -313,7 +354,7 @@ subscriptionsRouter.post('/upgrade', requireAuth, async (req: Request, res: Resp
 
     const effectiveEntitlements = {
       ...targetPlan.entitlements,
-      ...(currentSub.customEntitlementOverrides || {}),
+      ...(updatedSub.customEntitlementOverrides || {}),
     };
 
     return res.json({
@@ -323,11 +364,11 @@ subscriptionsRouter.post('/upgrade', requireAuth, async (req: Request, res: Resp
         tenantId,
         planId: targetPlan.id,
         planTier: targetPlan.tier,
-        status: currentSub.status,
-        currentPeriodEnd: currentSub.currentPeriodEnd,
+        status: updatedSub.status,
+        currentPeriodEnd: updatedSub.currentPeriodEnd,
         plan: targetPlan,
         effectiveEntitlements,
-        whiteLabelConfig: currentSub.whiteLabelConfig,
+        whiteLabelConfig: updatedSub.whiteLabelConfig,
       },
     });
   } catch (err: any) {
@@ -339,7 +380,7 @@ subscriptionsRouter.post('/upgrade', requireAuth, async (req: Request, res: Resp
 subscriptionsRouter.post('/whitelabel', requireAuth, async (req: Request, res: Response) => {
   try {
     const tenantId = req.user!.tenantId || 'default-tenant';
-    const sub = getTenantSubscription(tenantId);
+    const sub = await getTenantSubscription(tenantId);
     const plan = cachedPlans.find((p) => p.id === sub.planId);
 
     // Enforce Guiding Rule: ACCESS = SUBSCRIPTION ENTITLEMENT + USER ROLE
@@ -364,7 +405,7 @@ subscriptionsRouter.post('/whitelabel', requireAuth, async (req: Request, res: R
       hideAdgridWatermark,
     } = req.body;
 
-    sub.whiteLabelConfig = {
+    const updatedWhiteLabel: WhiteLabelConfig = {
       agencyLogoUrl: agencyLogoUrl || sub.whiteLabelConfig?.agencyLogoUrl,
       clientLogoUrl: clientLogoUrl || sub.whiteLabelConfig?.clientLogoUrl,
       primaryBrandColor: primaryBrandColor || sub.whiteLabelConfig?.primaryBrandColor || '#ef5a24',
@@ -372,6 +413,7 @@ subscriptionsRouter.post('/whitelabel', requireAuth, async (req: Request, res: R
       customReportFooter: customReportFooter || sub.whiteLabelConfig?.customReportFooter,
       hideAdgridWatermark: Boolean(hideAdgridWatermark),
     };
+    await saveTenantSubscription(tenantId, { ...sub, whiteLabelConfig: updatedWhiteLabel });
 
     await recordAuditLog({
       actorId: req.user!.id,
@@ -380,14 +422,14 @@ subscriptionsRouter.post('/whitelabel', requireAuth, async (req: Request, res: R
       action: 'WHITE_LABEL_CONFIG_UPDATED',
       entity: 'WhiteLabelSettings',
       entityId: tenantId,
-      metadata: sub.whiteLabelConfig,
+      metadata: updatedWhiteLabel,
       req,
     });
 
     return res.json({
       success: true,
       message: 'White-label reporting preferences saved.',
-      whiteLabelConfig: sub.whiteLabelConfig,
+      whiteLabelConfig: updatedWhiteLabel,
     });
   } catch (err: any) {
     return res.status(500).json({ success: false, error: err.message });

@@ -40,6 +40,9 @@ import {
 import { authenticator } from 'otplib';
 import { workspaceRouter } from './workspaces';
 import { subscriptionsRouter } from './subscriptions';
+import { inventoryRouter } from './inventory';
+import { bookingsRouter } from './bookings';
+import { paymentsRouter } from './payments';
 
 dotenv.config();
 
@@ -105,7 +108,8 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: '2mb' }));
+// Keep the raw body around so payment webhooks can verify HMAC signatures.
+app.use(express.json({ limit: '2mb', verify: (req, _res, buf) => { (req as any).rawBody = buf; } }));
 app.use(cookieParser());
 app.use(express.urlencoded({ extended: true }));
 
@@ -126,6 +130,9 @@ app.use(authenticateRequest);
 // Mount role-specific workspace API routes
 app.use(API_PREFIX, workspaceRouter);
 app.use(`${API_PREFIX}/subscriptions`, subscriptionsRouter);
+app.use(API_PREFIX, inventoryRouter);
+app.use(`${API_PREFIX}/bookings`, bookingsRouter);
+app.use(`${API_PREFIX}/payments`, paymentsRouter);
 
 // Health check endpoint verifying real database connectivity
 app.get(`${API_PREFIX}/health`, async (_req: Request, res: Response) => {
